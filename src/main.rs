@@ -361,7 +361,7 @@ fn main() {
 fn draw_tsp() {
     const dims: usize = 2;
 
-    let number_of_points = 100000;
+    let number_of_points = 10000;
 
     println!("Generating points");
     let point_list: Vec<Point<f64, dims>> = RandomPointGenerator::<f64, dims>::new_square_range(0.0, 2.0).take(number_of_points).collect();
@@ -401,7 +401,7 @@ fn draw_tsp() {
 fn draw_mst() {
     const dims: usize = 2;
 
-    let number_of_points = 100000;
+    let number_of_points = 10000;
 
     println!("Generating points");
     let point_list: Vec<Point<f64, dims>> = RandomPointGenerator::<f64, dims>::new_square_range(0.0, 2.0).take(number_of_points).collect();
