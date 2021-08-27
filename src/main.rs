@@ -354,14 +354,14 @@ use std::time::{Instant};
 fn main() {
     //benchmark_kd_tree();
     //benchmark_mst_construction();
-    //draw_mst();
+    draw_mst();
     draw_tsp();
 }
 
 fn draw_tsp() {
     const dims: usize = 2;
 
-    let number_of_points = 1000;
+    let number_of_points = 100000;
 
     println!("Generating points");
     let point_list: Vec<Point<f64, dims>> = RandomPointGenerator::<f64, dims>::new_square_range(0.0, 2.0).take(number_of_points).collect();
@@ -374,7 +374,7 @@ fn draw_tsp() {
 
     println!("Building mst");
     let mut euclidean_distance_graph: EuclideanPointDistanceGraph<dims> = EuclideanPointDistanceGraph::new(point_list, kdtree);
-    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<EuclideanEdgeWeight>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSize::Finite(number_of_points));
+    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<EuclideanEdgeWeight>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
 
     println!("Computing TSP path from mst");
     let tsp = TspPointPath::from_traversed_mst_in_graph(&mst, &euclidean_distance_graph);
@@ -401,7 +401,7 @@ fn draw_tsp() {
 fn draw_mst() {
     const dims: usize = 2;
 
-    let number_of_points = 6000000;
+    let number_of_points = 100000;
 
     println!("Generating points");
     let point_list: Vec<Point<f64, dims>> = RandomPointGenerator::<f64, dims>::new_square_range(0.0, 2.0).take(number_of_points).collect();
@@ -414,7 +414,7 @@ fn draw_mst() {
 
     println!("Building mst");
     let mut euclidean_distance_graph: EuclideanPointDistanceGraph<dims> = EuclideanPointDistanceGraph::new(point_list, kdtree);
-    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<EuclideanEdgeWeight>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSize::Finite(number_of_points));
+    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<EuclideanEdgeWeight>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
 
     println!("Computing tree depths");
     set_graph_depths_from_mst(&mut euclidean_distance_graph, &mst, 0, 0);
@@ -423,8 +423,8 @@ fn draw_mst() {
     let mut mst_vertex_iter = MstPointVertexIterator::new(&mst, &euclidean_distance_graph);
     let mut mst_edge_iter = MstPointEdgeIterator::new(&mst, &euclidean_distance_graph);
     let drawing_properties = graph_drawer::DrawingProperties {
-        image_width: 5900,
-        image_height: 5900,
+        image_width: 512,
+        image_height: 512,
         x_min: 0.0,
         x_max: 2.0,
         y_min: 0.0,
@@ -460,7 +460,7 @@ fn benchmark_mst_construction() {
     println!("Building mst");
 
     let mut euclidean_distance_graph: EuclideanPointDistanceGraph<dims> = EuclideanPointDistanceGraph::new(point_list, kdtree);
-    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<EuclideanEdgeWeight>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSize::Finite(number_of_points));
+    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<EuclideanEdgeWeight>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
     //println!("{:?}", mst);
 
     let mst_build_duration = pre_mst_build_time_instant.elapsed();
