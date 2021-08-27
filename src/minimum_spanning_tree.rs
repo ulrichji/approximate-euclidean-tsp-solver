@@ -46,13 +46,13 @@ impl<V, T> PartialOrd for Edge<V, T> where T: PartialOrd {
         self.weight.partial_cmp(&other.weight)
     }
 }
-impl<V, T> Ord for Edge<V, T> where T: Ord {
+impl<V, T> Ord for Edge<V, T> where T: PartialOrd {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.weight.cmp(&other.weight)
+        self.partial_cmp(&other).unwrap()
     }
 }
 
-pub trait Graph<V, T> where T: Ord {
+pub trait Graph<V, T> where T: PartialOrd {
     fn get_root_vertex_identifier(&self) -> V;
     fn next_neighbour_for_vertex(&mut self, vertex_identifier: &V) -> Option<Edge<V, T>>;
 }
@@ -82,7 +82,7 @@ struct MinimumSpanningTreeBuilder<V, T: std::cmp::PartialOrd> {
 
 impl <V, T: std::cmp::PartialOrd> MinimumSpanningTreeBuilder <V, T>
         where V: PartialEq + Copy + std::cmp::Eq + std::hash::Hash,
-              T: std::cmp::Ord {
+              T: std::cmp::PartialOrd {
 
     fn new_with_root(root_vertex_identifier: V) -> MinimumSpanningTreeBuilder <V, T> {
         let mut tree = MinimumSpanningTree::new();
@@ -190,7 +190,7 @@ impl<V> MinimumSpanningTree<V> where V: PartialEq + Copy + std::cmp::Eq + std::h
     }
 
     pub fn construct<T>(graph: &mut dyn Graph<V, T>, max_tree_size: TreeSizeLimit)
-            -> MinimumSpanningTree<V> where T: Ord {
+            -> MinimumSpanningTree<V> where T: PartialOrd {
         let mut tree_builder: MinimumSpanningTreeBuilder<V, T> =
             MinimumSpanningTreeBuilder::new_with_root(graph.get_root_vertex_identifier());
         tree_builder.construct_from_graph(graph, max_tree_size);

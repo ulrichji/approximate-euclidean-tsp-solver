@@ -1,119 +1,21 @@
-extern crate num_traits;
-
-use rand::distributions::{Distribution, Uniform, uniform::SampleUniform};
+use num_traits::Float;
 
 use kdtree::KdTree;
-use kdtree::kdtree::NearestIter;
 use kdtree::distance::squared_euclidean;
 
-mod minimum_spanning_tree;
+mod euclidean_distance_graph;
 mod graph_drawer;
+mod minimum_spanning_tree;
+mod random_point_generator;
 
-trait Zero {
-    fn zero() -> Self;
-}
+use euclidean_distance_graph::{EuclideanPointDistanceGraph, Point};
 
-#[derive(Debug, Copy, Clone)]
-struct Point<T, const N: usize> {
-    dims: [T; N]
-}
-
-struct RandomPointGenerator<T, const N: usize> where T: SampleUniform + Copy {
-    random_number_generator: rand::rngs::ThreadRng,
-    ranges: [(T, T); N]
-}
-
-impl<T, const N: usize> RandomPointGenerator<T, N> where T: SampleUniform + Copy {
-    pub fn new(ranges: [(T, T); N]) -> RandomPointGenerator<T, N> {
-        RandomPointGenerator {
-            random_number_generator: rand::thread_rng(),
-            ranges
-        }
-    }
-
-    pub fn new_square_range(min_range: T, max_range: T) -> RandomPointGenerator<T, N> {
-        RandomPointGenerator {
-            random_number_generator: rand::thread_rng(),
-            ranges: [(min_range, max_range); N]
-        }
-    }
-}
-
-impl<T, const N: usize> Iterator for RandomPointGenerator<T, N> where T: SampleUniform + Copy + Zero {
-    type Item = Point<T, N>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut dims = [T::zero(); N];
-        for (dim, range) in dims.iter_mut().zip(&self.ranges) {
-            let distribution = Uniform::new(range.0, range.1);
-            *dim = distribution.sample(&mut self.random_number_generator);
-        }
-        Some(Point{ dims })
-    }
-}
-
-struct PointWithId<T, const N: usize> {
-    point: Point<T, N>,
-    id: usize
-}
-
-#[derive(PartialEq, PartialOrd)]
-struct EuclideanEdgeWeight {
-    weight: f64
-}
-
-impl EuclideanEdgeWeight {
-    fn new(weight: f64) -> EuclideanEdgeWeight {
-        EuclideanEdgeWeight { weight }
-    }
-}
-
-impl Eq for EuclideanEdgeWeight { }
-impl Ord for EuclideanEdgeWeight {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if other.weight < other.weight {
-            std::cmp::Ordering::Less
-        } else if self.weight > other.weight {
-            std::cmp::Ordering::Greater
-        } else {
-            std::cmp::Ordering::Equal
-        }
-    }
-}
-
-/*
-type DistanceCallbackType<'a> = dyn 'a + Fn(&[f64], &[f64]) -> f64;
-struct EdgeIterator<'a, 'b> {
-    point: Point<f64, 3>,
-    nearest_iter: NearestIter<'a, 'b, f64, usize, [f64; 3], DistanceCallbackType<'static>>
-}
-*/
-
-struct EuclideanPointDistanceGraph<const N: usize> {
-    point_list: Vec<Point<f64, N>>,
-    kd_tree: KdTree<f64, usize, [f64; N]>,
-    edge_counts: Vec<usize>,
-    depths: Vec<Option<usize>>
-}
-
-impl<const N: usize> EuclideanPointDistanceGraph<N> {
-    fn new(point_list: Vec<Point<f64, N>>, kd_tree: KdTree<f64, usize, [f64; N]>) -> EuclideanPointDistanceGraph<N> {
-        let edge_counts = vec![0; point_list.len()];
-        let depths = vec![None; point_list.len()];
-
-        EuclideanPointDistanceGraph {
-            point_list,
-            kd_tree,
-            edge_counts,
-            depths
-        }
-    }
-}
-
-impl<const N: usize> minimum_spanning_tree::Graph<usize, EuclideanEdgeWeight> for EuclideanPointDistanceGraph<N> {
+impl<T, const N: usize> minimum_spanning_tree::Graph<usize, T>
+        for EuclideanPointDistanceGraph<T, N>
+        where T: Float + std::cmp::PartialOrd {
     fn get_root_vertex_identifier(&self) -> usize { 0usize }
     fn next_neighbour_for_vertex(&mut self, vertex_identifier: &usize)
-            -> std::option::Option<minimum_spanning_tree::Edge<usize, EuclideanEdgeWeight>> {
+            -> std::option::Option<minimum_spanning_tree::Edge<usize, T>> {
 
         let point = &self.point_list[*vertex_identifier];
         let edge_count = &mut self.edge_counts[*vertex_identifier];
@@ -125,14 +27,14 @@ impl<const N: usize> minimum_spanning_tree::Graph<usize, EuclideanEdgeWeight> fo
             Some(neighbour) => {
                 Some(minimum_spanning_tree::Edge::new(*vertex_identifier,
                                                       *neighbour.1,
-                                                      EuclideanEdgeWeight::new(neighbour.0)))
+                                                      neighbour.0))
             },
             None => None
         }
     }
 }
 
-fn set_graph_depths_from_mst<const N: usize>(graph: &mut EuclideanPointDistanceGraph<N>,
+fn set_graph_depths_from_mst<T, const N: usize>(graph: &mut EuclideanPointDistanceGraph<T, N>,
                                              mst: &minimum_spanning_tree::MinimumSpanningTree<usize>,
                                              vertex_index: usize,
                                              depth: usize) {
@@ -149,19 +51,16 @@ fn set_graph_depths_from_mst<const N: usize>(graph: &mut EuclideanPointDistanceG
             set_graph_depths_from_mst(graph, mst, vertex_at_index.first_child_index.unwrap(), depth + 1);
         }
     }
-
-
-
 }
 
-struct MstPointVertexIterator<'a, 'b, const N: usize> {
+struct MstPointVertexIterator<'a, 'b, T, const N: usize> {
     mst: &'a minimum_spanning_tree::MinimumSpanningTree<usize>,
-    point_distance_graph: &'b EuclideanPointDistanceGraph<N>,
+    point_distance_graph: &'b EuclideanPointDistanceGraph<T, N>,
     current_vertex_index: usize
 }
 
-impl <'a, 'b, const N: usize> MstPointVertexIterator<'a, 'b, N> {
-    fn new(mst: &'a minimum_spanning_tree::MinimumSpanningTree<usize>, point_distance_graph: &'b EuclideanPointDistanceGraph<N>) -> MstPointVertexIterator<'a, 'b, N>  {
+impl <'a, 'b, T, const N: usize> MstPointVertexIterator<'a, 'b, T, N> {
+    fn new(mst: &'a minimum_spanning_tree::MinimumSpanningTree<usize>, point_distance_graph: &'b EuclideanPointDistanceGraph<T, N>) -> MstPointVertexIterator<'a, 'b, T, N>  {
         MstPointVertexIterator {
             mst,
             point_distance_graph,
@@ -170,29 +69,30 @@ impl <'a, 'b, const N: usize> MstPointVertexIterator<'a, 'b, N> {
     }
 }
 
-impl <'a, 'b, const N: usize> Iterator for MstPointVertexIterator<'a, 'b, N> {
+impl <'a, 'b, T, const N: usize> Iterator for MstPointVertexIterator<'a, 'b, T, N>
+        where T: Into<f64> + Copy {
     type Item = graph_drawer::DrawableVertex2D;
     fn next(&mut self) -> std::option::Option<<Self as std::iter::Iterator>::Item> {
         if self.current_vertex_index < self.mst.elements.len() {
             let vertex = &self.point_distance_graph.point_list[self.mst.elements[self.current_vertex_index].vertex_identifier];
             let vertex_depth = self.point_distance_graph.depths[self.mst.elements[self.current_vertex_index].vertex_identifier].unwrap_or(0);
             self.current_vertex_index += 1;
-            Some(graph_drawer::DrawableVertex2D::new(vertex.dims[0], vertex.dims[1], vertex_depth))
+            Some(graph_drawer::DrawableVertex2D::new(vertex.dims[0].into(), vertex.dims[1].into(), vertex_depth))
         } else {
             None
         }
     }
 }
 
-struct MstPointEdgeIterator<'a, 'b, const N: usize> {
+struct MstPointEdgeIterator<'a, 'b, T, const N: usize> {
     mst: &'a minimum_spanning_tree::MinimumSpanningTree<usize>,
-    point_distance_graph: &'b EuclideanPointDistanceGraph<N>,
+    point_distance_graph: &'b EuclideanPointDistanceGraph<T, N>,
     current_from_vertex_index: usize,
     current_to_vertex_index: usize
 }
 
-impl <'a, 'b, const N: usize> MstPointEdgeIterator<'a, 'b, N> {
-    fn new(mst: &'a minimum_spanning_tree::MinimumSpanningTree<usize>, point_distance_graph: &'b EuclideanPointDistanceGraph<N>) -> MstPointEdgeIterator<'a, 'b, N>  {
+impl <'a, 'b, T, const N: usize> MstPointEdgeIterator<'a, 'b, T, N> {
+    fn new(mst: &'a minimum_spanning_tree::MinimumSpanningTree<usize>, point_distance_graph: &'b EuclideanPointDistanceGraph<T, N>) -> MstPointEdgeIterator<'a, 'b, T, N>  {
         MstPointEdgeIterator {
             mst,
             point_distance_graph,
@@ -228,7 +128,8 @@ impl <'a, 'b, const N: usize> MstPointEdgeIterator<'a, 'b, N> {
     }
 }
 
-impl <'a, 'b, const N: usize> Iterator for MstPointEdgeIterator<'a, 'b, N> {
+impl <'a, 'b, T, const N: usize> Iterator for MstPointEdgeIterator<'a, 'b, T, N>
+        where T: Into<f64> + Copy{
     type Item = graph_drawer::DrawableEdge2D;
     fn next(&mut self) -> std::option::Option<<Self as std::iter::Iterator>::Item> {
         if self.current_from_vertex_index < self.mst.elements.len() {
@@ -239,8 +140,8 @@ impl <'a, 'b, const N: usize> Iterator for MstPointEdgeIterator<'a, 'b, N> {
 
             self.find_next_edge();
 
-            Some(graph_drawer::DrawableEdge2D::new(graph_drawer::DrawableVertex2D::new(from_vertex.dims[0], from_vertex.dims[1], from_vertex_depth),
-                                                   graph_drawer::DrawableVertex2D::new(to_vertex.dims[0], to_vertex.dims[1], to_vertex_depth)))
+            Some(graph_drawer::DrawableEdge2D::new(graph_drawer::DrawableVertex2D::new(from_vertex.dims[0].into(), from_vertex.dims[1].into(), from_vertex_depth),
+                                                   graph_drawer::DrawableVertex2D::new(to_vertex.dims[0].into(), to_vertex.dims[1].into(), to_vertex_depth)))
         } else {
             None
         }
@@ -251,13 +152,13 @@ struct TspPointPath<T, const N: usize> {
     points: Vec<Point<T, N>>,
 }
 
-struct TspPointPathVertexIterator<'a, const N: usize> {
-    tsp_point_path: &'a TspPointPath<f64, N>,
+struct TspPointPathVertexIterator<'a, T, const N: usize> {
+    tsp_point_path: &'a TspPointPath<T, N>,
     current_index: usize
 }
 
-impl <'a, const N: usize> TspPointPathVertexIterator<'a, N> {
-    fn new(tsp_point_path: &'a TspPointPath<f64, N>) -> TspPointPathVertexIterator<'a, N> {
+impl <'a, T, const N: usize> TspPointPathVertexIterator<'a, T, N> {
+    fn new(tsp_point_path: &'a TspPointPath<T, N>) -> TspPointPathVertexIterator<'a, T, N> {
         TspPointPathVertexIterator {
             tsp_point_path,
             current_index: 0
@@ -265,27 +166,28 @@ impl <'a, const N: usize> TspPointPathVertexIterator<'a, N> {
     }
 }
 
-impl<'a, const N: usize> Iterator for TspPointPathVertexIterator<'a, N> {
+impl<'a, T, const N: usize> Iterator for TspPointPathVertexIterator<'a, T, N>
+        where T: Into<f64> + Copy {
     type Item = graph_drawer::DrawableVertex2D;
     fn next(&mut self) -> Option<graph_drawer::DrawableVertex2D> {
         if self.current_index < self.tsp_point_path.points.len() {
             let vertex = self.tsp_point_path.points[self.current_index];
             self.current_index += 1;
 
-            Some(graph_drawer::DrawableVertex2D::new(vertex.dims[0], vertex.dims[1], self.current_index - 1))
+            Some(graph_drawer::DrawableVertex2D::new(vertex.dims[0].into(), vertex.dims[1].into(), self.current_index - 1))
         } else {
             None
         }
     }
 }
 
-struct TspPointPathEdgeIterator<'a, const N: usize> {
-    tsp_point_path: &'a TspPointPath<f64, N>,
+struct TspPointPathEdgeIterator<'a, T, const N: usize> {
+    tsp_point_path: &'a TspPointPath<T, N>,
     current_index: usize
 }
 
-impl <'a, const N: usize> TspPointPathEdgeIterator<'a, N> {
-    fn new(tsp_point_path: &'a TspPointPath<f64, N>) -> TspPointPathEdgeIterator<'a, N> {
+impl <'a, T, const N: usize> TspPointPathEdgeIterator<'a, T, N> {
+    fn new(tsp_point_path: &'a TspPointPath<T, N>) -> TspPointPathEdgeIterator<'a, T, N> {
         TspPointPathEdgeIterator {
             tsp_point_path,
             current_index: 0
@@ -293,7 +195,8 @@ impl <'a, const N: usize> TspPointPathEdgeIterator<'a, N> {
     }
 }
 
-impl<'a, const N: usize> Iterator for TspPointPathEdgeIterator<'a, N> {
+impl<'a, T, const N: usize> Iterator for TspPointPathEdgeIterator<'a, T, N>
+        where T: Into<f64> + Copy {
     type Item = graph_drawer::DrawableEdge2D;
     fn next(&mut self) -> Option<graph_drawer::DrawableEdge2D> {
         if self.current_index < self.tsp_point_path.points.len() {
@@ -302,18 +205,18 @@ impl<'a, const N: usize> Iterator for TspPointPathEdgeIterator<'a, N> {
             let to_vertex = self.tsp_point_path.points[self.current_index % self.tsp_point_path.points.len()];
 
             Some(graph_drawer::DrawableEdge2D::new(
-                graph_drawer::DrawableVertex2D::new(from_vertex.dims[0], from_vertex.dims[1], self.current_index - 1),
-                graph_drawer::DrawableVertex2D::new(to_vertex.dims[0], to_vertex.dims[1], self.current_index)))
+                graph_drawer::DrawableVertex2D::new(from_vertex.dims[0].into(), from_vertex.dims[1].into(), self.current_index - 1),
+                graph_drawer::DrawableVertex2D::new(to_vertex.dims[0].into(), to_vertex.dims[1].into(), self.current_index)))
         } else {
             None
         }
     }
 }
 
-impl<const N: usize> TspPointPath<f64, N> {
+impl<T, const N: usize> TspPointPath<T, N> where T: Copy {
     fn from_traversed_mst_in_graph(mst: &minimum_spanning_tree::MinimumSpanningTree<usize>,
-                                   point_distance_graph: &EuclideanPointDistanceGraph<N>)
-                                        -> TspPointPath<f64, N> {
+                                   point_distance_graph: &EuclideanPointDistanceGraph<T, N>)
+                                        -> TspPointPath<T, N> {
         let mut points = Vec::new();
 
         let mut backtrack_vertices: Vec<usize> = Vec::new();
@@ -346,10 +249,6 @@ impl<const N: usize> TspPointPath<f64, N> {
     }
 }
 
-impl Zero for f64 {
-    fn zero() -> f64 { 0f64 }
-}
-
 use std::time::{Instant};
 fn main() {
     //benchmark_kd_tree();
@@ -359,12 +258,13 @@ fn main() {
 }
 
 fn draw_tsp() {
+    type PointNumberType = f64;
     const dims: usize = 2;
 
     let number_of_points = 10000;
 
     println!("Generating points");
-    let point_list: Vec<Point<f64, dims>> = RandomPointGenerator::<f64, dims>::new_square_range(0.0, 2.0).take(number_of_points).collect();
+    let point_list: Vec<Point<PointNumberType, dims>> = random_point_generator::RandomPointGenerator::<PointNumberType, dims>::new_square_range(0.0, 2.0).take(number_of_points).collect();
 
     println!("Building tree");
     let mut kdtree = KdTree::new(dims);
@@ -373,8 +273,8 @@ fn draw_tsp() {
     }
 
     println!("Building mst");
-    let mut euclidean_distance_graph: EuclideanPointDistanceGraph<dims> = EuclideanPointDistanceGraph::new(point_list, kdtree);
-    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<EuclideanEdgeWeight>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
+    let mut euclidean_distance_graph: EuclideanPointDistanceGraph<PointNumberType, dims> = EuclideanPointDistanceGraph::new(point_list, kdtree);
+    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<PointNumberType>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
 
     println!("Computing TSP path from mst");
     let tsp = TspPointPath::from_traversed_mst_in_graph(&mst, &euclidean_distance_graph);
@@ -399,12 +299,14 @@ fn draw_tsp() {
 }
 
 fn draw_mst() {
+    type PointNumberType = f64;
+
     const dims: usize = 2;
 
     let number_of_points = 10000;
 
     println!("Generating points");
-    let point_list: Vec<Point<f64, dims>> = RandomPointGenerator::<f64, dims>::new_square_range(0.0, 2.0).take(number_of_points).collect();
+    let point_list: Vec<Point<PointNumberType, dims>> = random_point_generator::RandomPointGenerator::<PointNumberType, dims>::new_square_range(0.0, 2.0).take(number_of_points).collect();
 
     println!("Building tree");
     let mut kdtree = KdTree::new(dims);
@@ -413,8 +315,8 @@ fn draw_mst() {
     }
 
     println!("Building mst");
-    let mut euclidean_distance_graph: EuclideanPointDistanceGraph<dims> = EuclideanPointDistanceGraph::new(point_list, kdtree);
-    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<EuclideanEdgeWeight>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
+    let mut euclidean_distance_graph: EuclideanPointDistanceGraph<PointNumberType, dims> = EuclideanPointDistanceGraph::new(point_list, kdtree);
+    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<PointNumberType>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
 
     println!("Computing tree depths");
     set_graph_depths_from_mst(&mut euclidean_distance_graph, &mst, 0, 0);
@@ -439,6 +341,8 @@ fn draw_mst() {
 }
 
 fn benchmark_mst_construction() {
+    type PointNumberType = f64;
+
     const dims: usize = 3;
 
     let number_of_points = 100000;
@@ -446,7 +350,7 @@ fn benchmark_mst_construction() {
     let pre_build_time_instant = Instant::now();
 
     println!("Generating points");
-    let point_list: Vec<Point<f64, dims>> = RandomPointGenerator::<f64, dims>::new_square_range(0.0, 2.0).take(number_of_points).collect();
+    let point_list: Vec<Point<PointNumberType, dims>> = random_point_generator::RandomPointGenerator::<PointNumberType, dims>::new_square_range(0.0, 2.0).take(number_of_points).collect();
 
     println!("Building tree");
     let mut kdtree = KdTree::new(dims);
@@ -459,8 +363,8 @@ fn benchmark_mst_construction() {
 
     println!("Building mst");
 
-    let mut euclidean_distance_graph: EuclideanPointDistanceGraph<dims> = EuclideanPointDistanceGraph::new(point_list, kdtree);
-    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<EuclideanEdgeWeight>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
+    let mut euclidean_distance_graph: EuclideanPointDistanceGraph<PointNumberType, dims> = EuclideanPointDistanceGraph::new(point_list, kdtree);
+    let mst: minimum_spanning_tree::MinimumSpanningTree<usize> = minimum_spanning_tree::MinimumSpanningTree::construct::<PointNumberType>(&mut euclidean_distance_graph, minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
     //println!("{:?}", mst);
 
     let mst_build_duration = pre_mst_build_time_instant.elapsed();
@@ -470,6 +374,8 @@ fn benchmark_mst_construction() {
 }
 
 fn benchmark_kd_tree() {
+    type PointNumberType = f64;
+
     const dims: usize = 3;
 
     let number_of_points = 20000000;
@@ -479,7 +385,7 @@ fn benchmark_kd_tree() {
 
     println!("Building tree");
     let mut kdtree = KdTree::new(dims);
-    for (i, p) in RandomPointGenerator::<f64, dims>::new_square_range(0.0, 2.0).take(number_of_points).enumerate() {
+    for (i, p) in random_point_generator::RandomPointGenerator::<PointNumberType, dims>::new_square_range(0.0, 2.0).take(number_of_points).enumerate() {
         kdtree.add(p.dims, i).unwrap();
     }
 
@@ -487,7 +393,7 @@ fn benchmark_kd_tree() {
     let pre_search_instant = Instant::now();
 
     println!("Searching tree");
-    let nearest_points: Vec<(f64, &usize)> = RandomPointGenerator::<f64, dims>::new_square_range(0.0, 2.0)
+    let nearest_points: Vec<(PointNumberType, &usize)> = random_point_generator::RandomPointGenerator::<PointNumberType, dims>::new_square_range(0.0, 2.0)
         .take(number_of_searches)
         .map(|p| kdtree.nearest(&p.dims, 1, &squared_euclidean).unwrap()[0])
         .collect();

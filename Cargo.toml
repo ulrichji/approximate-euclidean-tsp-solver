@@ -1,5 +1,5 @@
 [package]
-name = "RustTspSolver"
+name = "approximate_tsp_solver"
 version = "0.1.0"
 authors = ["Ulrich Johan Isachsen <ulrich@isachsen.org>"]
 edition = "2018"
