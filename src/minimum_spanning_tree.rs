@@ -63,13 +63,6 @@ pub enum TreeSizeLimit {
 }
 
 #[derive(Debug)]
-struct MinimumSpanningTreeElement<T> {
-    first_child_index: Option<usize>,
-    next_sibling_index: Option<usize>,
-    data: T
-}
-
-#[derive(Debug)]
 pub struct MinimumSpanningTree<T> {
     pub elements: Vec<Vertex<T>>
 }

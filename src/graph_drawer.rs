@@ -9,7 +9,9 @@ pub struct DrawableVertex2D {
 }
 
 impl DrawableVertex2D {
-    pub fn new(x: f64, y: f64, depth: usize) -> DrawableVertex2D { DrawableVertex2D { x, y, depth } }
+    pub fn new(x: f64, y: f64, depth: usize) -> DrawableVertex2D {
+        DrawableVertex2D { x, y, depth }
+    }
 }
 
 pub struct DrawableEdge2D {
@@ -18,7 +20,9 @@ pub struct DrawableEdge2D {
 }
 
 impl DrawableEdge2D {
-    pub fn new(from: DrawableVertex2D, to: DrawableVertex2D) -> DrawableEdge2D { DrawableEdge2D { from, to } }
+    pub fn new(from: DrawableVertex2D, to: DrawableVertex2D) -> DrawableEdge2D {
+        DrawableEdge2D { from, to }
+    }
 }
 
 struct PixelPosition {
