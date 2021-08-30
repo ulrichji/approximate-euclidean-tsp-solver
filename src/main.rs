@@ -3,6 +3,9 @@ use num_traits::Float;
 use kdtree::KdTree;
 use kdtree::distance::squared_euclidean;
 
+use std::path::PathBuf;
+use structopt::StructOpt;
+
 mod euclidean_distance_graph;
 mod graph_drawer;
 mod minimum_spanning_tree;
@@ -10,6 +13,9 @@ mod mst_graph_drawer;
 mod random_point_generator;
 mod tsp_mst_approximation;
 mod tsp_point_path_drawer;
+
+mod main_mst_image_maker;
+mod main_tsp_image_maker;
 
 use euclidean_distance_graph::{EuclideanPointDistanceGraph, Point};
 
@@ -47,18 +53,15 @@ fn create_mst_from_random_points<T, const N: usize>(number_of_points: usize, poi
                  Copy +
                  random_point_generator::Zero +
                  num_traits::Float {
-    println!("Generating points");
     let point_list: Vec<Point<T, N>>
         = random_point_generator::RandomPointGenerator::<T, N>::
             new_square_range(points_range.0, points_range.1).take(number_of_points).collect();
 
-    println!("Building tree");
     let mut kdtree = KdTree::new(N);
     for (i, p) in point_list.iter().enumerate() {
         kdtree.add(p.dims, i).unwrap();
     }
 
-    println!("Building mst");
     let mut euclidean_distance_graph: EuclideanPointDistanceGraph<T, N>
         = EuclideanPointDistanceGraph::new(point_list, kdtree);
     let mst: minimum_spanning_tree::MinimumSpanningTree<usize>
@@ -69,71 +72,49 @@ fn create_mst_from_random_points<T, const N: usize>(number_of_points: usize, poi
     (mst, euclidean_distance_graph)
 }
 
+#[derive(Debug, StructOpt)]
+#[structopt(name = "approximate_tsp_solver",
+            about = "Solve the travelling salesman problem with the minimum spanning tree \
+                     approximation, and plot the result as pretty looking images. It can also \
+                     plot the minimum spanning tree that also can be quite decorative")]
+enum ProgramOptions {
+    Mst(RandomPointsImageMakerOptions),
+    Tsp(RandomPointsImageMakerOptions)
+}
+
+#[derive(Debug, StructOpt)]
+pub struct RandomPointsImageMakerOptions {
+    #[structopt(short, long)]
+    number_of_points: usize,
+
+    #[structopt(parse(from_os_str))]
+    result_image_path: PathBuf,
+
+    #[structopt(long, default_value = "0.0")]
+    points_min_range: f64,
+    #[structopt(long, default_value = "1.0")]
+    points_max_range: f64,
+
+    #[structopt(long, default_value="512")]
+    result_image_width: u32,
+    #[structopt(long, default_value="512")]
+    result_image_height: u32,
+
+    #[structopt(long, default_value = "0.0")]
+    result_image_bounds_min: f64,
+    #[structopt(long, default_value = "1.0")]
+    result_image_bounds_max: f64,
+}
+
 fn main() {
-    draw_mst();
-    draw_tsp();
-}
+    let program_options = ProgramOptions::from_args();
 
-fn draw_tsp() {
-    type PointNumberType = f64;
-    const DIMS: usize = 2;
-    let number_of_points = 10000;
-    let points_range = (0.0, 1.0);
-
-    let (mst, euclidean_distance_graph) = create_mst_from_random_points::<PointNumberType, DIMS>(
-        number_of_points, points_range);
-
-    println!("Computing TSP path from mst");
-    let tsp = tsp_mst_approximation::TspPointPath::from_traversed_mst_in_graph(
-        &mst, &euclidean_distance_graph);
-
-    println!("Drawing TSP trajectory to image");
-    let mut tsp_vertex_iter = tsp_point_path_drawer::drawable_vertex_iter(&tsp);
-    let mut tsp_edge_iter = tsp_point_path_drawer::drawable_edge_iter(&tsp);
-    let drawing_properties = graph_drawer::DrawingProperties {
-        image_width: 512,
-        image_height: 512,
-        x_min: points_range.0,
-        x_max: points_range.1,
-        y_min: points_range.0,
-        y_max: points_range.1,
-        max_depth: tsp.steps_in_path()
-    };
-    let image = graph_drawer::draw_2d_graph(
-        &mut tsp_vertex_iter, &mut tsp_edge_iter, &drawing_properties);
-
-    println!("Saving image to tsp.png");
-    image.save("tsp.png").unwrap();
-}
-
-fn draw_mst() {
-    type PointNumberType = f64;
-    const DIMS: usize = 2;
-    let number_of_points = 10000;
-    let points_range = (0.0, 1.0);
-
-    let (mst, euclidean_distance_graph) = create_mst_from_random_points::<PointNumberType, DIMS>(
-        number_of_points, points_range);
-
-    println!("Drawing mst to image");
-    let mut mst_vertex_iter = mst_graph_drawer::drawable_vertex_iter(
-        &mst, &euclidean_distance_graph.point_list);
-    let mut mst_edge_iter = mst_graph_drawer::drawable_edge_iter(
-        &mst, &euclidean_distance_graph.point_list);
-    let max_depth = mst.traverse_nodes_preorder().map(|(_, l)| l).max().unwrap_or(0);
-
-    let drawing_properties = graph_drawer::DrawingProperties {
-        image_width: 512,
-        image_height: 512,
-        x_min: points_range.0,
-        x_max: points_range.1,
-        y_min: points_range.0,
-        y_max: points_range.1,
-        max_depth
-    };
-    let image = graph_drawer::draw_2d_graph(
-        &mut mst_vertex_iter, &mut mst_edge_iter, &drawing_properties);
-
-    println!("Saving image");
-    image.save("mst.png").unwrap();
+    match program_options {
+        ProgramOptions::Mst(mst_options) => {
+            main_mst_image_maker::draw_mst(&mst_options);
+        },
+        ProgramOptions::Tsp(tsp_options) => {
+            main_tsp_image_maker::draw_tsp(&tsp_options);
+        }
+    }
 }

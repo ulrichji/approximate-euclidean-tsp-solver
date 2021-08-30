@@ -8,10 +8,12 @@ edition = "2018"
 
 [dependencies]
 kdtree = "0.5.1"
+
 rand = "0.8.4"
+num-traits = "0.2.14"
 
 image = "0.23.14"
 imageproc = "0.22.0"
 palette = "0.6.0"
 
-num-traits = "0.2.14"
+structopt = "0.3.22"
