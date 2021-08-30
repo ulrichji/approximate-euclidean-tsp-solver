@@ -6,6 +6,7 @@ use kdtree::distance::squared_euclidean;
 mod euclidean_distance_graph;
 mod graph_drawer;
 mod minimum_spanning_tree;
+mod mst_graph_drawer;
 mod random_point_generator;
 mod tsp_mst_approximation;
 mod tsp_point_path_drawer;
@@ -39,124 +40,36 @@ impl<T, const N: usize> minimum_spanning_tree::Graph<usize, T>
     }
 }
 
-fn set_graph_depths_from_mst<T, const N: usize>(
-        graph: &mut EuclideanPointDistanceGraph<T, N>,
-        mst: &minimum_spanning_tree::MinimumSpanningTree<usize>,
-        vertex_index: usize,
-        depth: usize) {
-    let vertex_at_index = &mst.elements[vertex_index];
-    let vertex_index_in_point_list = vertex_at_index.vertex_identifier;
-    if graph.depths[vertex_index_in_point_list].is_none() {
-        graph.depths[vertex_index_in_point_list] = Some(depth);
 
-        if vertex_at_index.next_sibling_index.is_some() {
-            set_graph_depths_from_mst(graph, mst, vertex_at_index.next_sibling_index.unwrap(), depth);
-        }
+fn create_mst_from_random_points<T, const N: usize>(number_of_points: usize, points_range: (T, T))
+        -> (minimum_spanning_tree::MinimumSpanningTree<usize>, EuclideanPointDistanceGraph<T, N>)
+        where T: rand::distributions::uniform::SampleUniform +
+                 Copy +
+                 random_point_generator::Zero +
+                 num_traits::Float {
+    println!("Generating points");
+    let point_list: Vec<Point<T, N>>
+        = random_point_generator::RandomPointGenerator::<T, N>::
+            new_square_range(points_range.0, points_range.1).take(number_of_points).collect();
 
-        if vertex_at_index.first_child_index.is_some() {
-            set_graph_depths_from_mst(graph, mst, vertex_at_index.first_child_index.unwrap(), depth + 1);
-        }
-    }
-}
-
-struct MstPointVertexIterator<'a, 'b, T, const N: usize> {
-    mst: &'a minimum_spanning_tree::MinimumSpanningTree<usize>,
-    point_distance_graph: &'b EuclideanPointDistanceGraph<T, N>,
-    current_vertex_index: usize
-}
-
-impl <'a, 'b, T, const N: usize> MstPointVertexIterator<'a, 'b, T, N> {
-    fn new(mst: &'a minimum_spanning_tree::MinimumSpanningTree<usize>, point_distance_graph: &'b EuclideanPointDistanceGraph<T, N>) -> MstPointVertexIterator<'a, 'b, T, N>  {
-        MstPointVertexIterator {
-            mst,
-            point_distance_graph,
-            current_vertex_index: 0
-        }
-    }
-}
-
-impl <'a, 'b, T, const N: usize> Iterator for MstPointVertexIterator<'a, 'b, T, N>
-        where T: Into<f64> + Copy {
-    type Item = graph_drawer::DrawableVertex2D;
-    fn next(&mut self) -> std::option::Option<<Self as std::iter::Iterator>::Item> {
-        if self.current_vertex_index < self.mst.elements.len() {
-            let vertex = &self.point_distance_graph.point_list[self.mst.elements[self.current_vertex_index].vertex_identifier];
-            let vertex_depth = self.point_distance_graph.depths[self.mst.elements[self.current_vertex_index].vertex_identifier].unwrap_or(0);
-            self.current_vertex_index += 1;
-            Some(graph_drawer::DrawableVertex2D::new(vertex.dims[0].into(), vertex.dims[1].into(), vertex_depth))
-        } else {
-            None
-        }
-    }
-}
-
-struct MstPointEdgeIterator<'a, 'b, T, const N: usize> {
-    mst: &'a minimum_spanning_tree::MinimumSpanningTree<usize>,
-    point_distance_graph: &'b EuclideanPointDistanceGraph<T, N>,
-    current_from_vertex_index: usize,
-    current_to_vertex_index: usize
-}
-
-impl <'a, 'b, T, const N: usize> MstPointEdgeIterator<'a, 'b, T, N> {
-    fn new(mst: &'a minimum_spanning_tree::MinimumSpanningTree<usize>, point_distance_graph: &'b EuclideanPointDistanceGraph<T, N>) -> MstPointEdgeIterator<'a, 'b, T, N>  {
-        MstPointEdgeIterator {
-            mst,
-            point_distance_graph,
-            current_from_vertex_index: 0,
-            current_to_vertex_index: mst.elements[0].first_child_index.unwrap_or(0)
-        }
+    println!("Building tree");
+    let mut kdtree = KdTree::new(N);
+    for (i, p) in point_list.iter().enumerate() {
+        kdtree.add(p.dims, i).unwrap();
     }
 
-    fn find_next_edge(&mut self) {
-        let to_vertex = &self.mst.elements[self.current_to_vertex_index];
+    println!("Building mst");
+    let mut euclidean_distance_graph: EuclideanPointDistanceGraph<T, N>
+        = EuclideanPointDistanceGraph::new(point_list, kdtree);
+    let mst: minimum_spanning_tree::MinimumSpanningTree<usize>
+        = minimum_spanning_tree::MinimumSpanningTree::construct::<T>(
+            &mut euclidean_distance_graph,
+            minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
 
-        self.current_from_vertex_index = match to_vertex.next_sibling_index {
-            Some(_) => self.current_from_vertex_index,
-            None => {
-                let mut next_from_vertex_index = self.current_from_vertex_index + 1;
-                while next_from_vertex_index < self.mst.elements.len() && self.mst.elements[next_from_vertex_index].first_child_index.is_none() {
-                    next_from_vertex_index += 1;
-                };
-                next_from_vertex_index
-            }
-        };
-
-        self.current_to_vertex_index = match to_vertex.next_sibling_index {
-            Some(i) => i,
-            None => {
-                if self.current_from_vertex_index < self.mst.elements.len() {
-                    self.mst.elements[self.current_from_vertex_index].first_child_index.unwrap()
-                } else {
-                    0
-                }
-            }
-        };
-    }
-}
-impl <'a, 'b, T, const N: usize> Iterator for MstPointEdgeIterator<'a, 'b, T, N>
-        where T: Into<f64> + Copy{
-    type Item = graph_drawer::DrawableEdge2D;
-    fn next(&mut self) -> std::option::Option<<Self as std::iter::Iterator>::Item> {
-        if self.current_from_vertex_index < self.mst.elements.len() {
-            let from_vertex = &self.point_distance_graph.point_list[self.mst.elements[self.current_from_vertex_index].vertex_identifier];
-            let to_vertex = &self.point_distance_graph.point_list[self.mst.elements[self.current_to_vertex_index].vertex_identifier];
-            let from_vertex_depth = self.point_distance_graph.depths[self.mst.elements[self.current_from_vertex_index].vertex_identifier].unwrap_or(0);
-            let to_vertex_depth = self.point_distance_graph.depths[self.mst.elements[self.current_to_vertex_index].vertex_identifier].unwrap_or(0);
-
-            self.find_next_edge();
-
-            Some(graph_drawer::DrawableEdge2D::new(graph_drawer::DrawableVertex2D::new(from_vertex.dims[0].into(), from_vertex.dims[1].into(), from_vertex_depth),
-                                                   graph_drawer::DrawableVertex2D::new(to_vertex.dims[0].into(), to_vertex.dims[1].into(), to_vertex_depth)))
-        } else {
-            None
-        }
-    }
+    (mst, euclidean_distance_graph)
 }
 
-use std::time::{Instant};
 fn main() {
-    //benchmark_kd_tree();
-    //benchmark_mst_construction();
     draw_mst();
     draw_tsp();
 }
@@ -164,27 +77,11 @@ fn main() {
 fn draw_tsp() {
     type PointNumberType = f64;
     const DIMS: usize = 2;
-
     let number_of_points = 10000;
+    let points_range = (0.0, 1.0);
 
-    println!("Generating points");
-    let point_list: Vec<Point<PointNumberType, DIMS>>
-        = random_point_generator::RandomPointGenerator::<PointNumberType, DIMS>::
-            new_square_range(0.0, 2.0).take(number_of_points).collect();
-
-    println!("Building tree");
-    let mut kdtree = KdTree::new(DIMS);
-    for (i, p) in point_list.iter().enumerate() {
-        kdtree.add(p.dims, i).unwrap();
-    }
-
-    println!("Building mst");
-    let mut euclidean_distance_graph: EuclideanPointDistanceGraph<PointNumberType, DIMS>
-        = EuclideanPointDistanceGraph::new(point_list, kdtree);
-    let mst: minimum_spanning_tree::MinimumSpanningTree<usize>
-        = minimum_spanning_tree::MinimumSpanningTree::construct::<PointNumberType>(
-            &mut euclidean_distance_graph,
-            minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
+    let (mst, euclidean_distance_graph) = create_mst_from_random_points::<PointNumberType, DIMS>(
+        number_of_points, points_range);
 
     println!("Computing TSP path from mst");
     let tsp = tsp_mst_approximation::TspPointPath::from_traversed_mst_in_graph(
@@ -196,10 +93,10 @@ fn draw_tsp() {
     let drawing_properties = graph_drawer::DrawingProperties {
         image_width: 512,
         image_height: 512,
-        x_min: 0.0,
-        x_max: 2.0,
-        y_min: 0.0,
-        y_max: 2.0,
+        x_min: points_range.0,
+        x_max: points_range.1,
+        y_min: points_range.0,
+        y_max: points_range.1,
         max_depth: tsp.steps_in_path()
     };
     let image = graph_drawer::draw_2d_graph(
@@ -211,130 +108,32 @@ fn draw_tsp() {
 
 fn draw_mst() {
     type PointNumberType = f64;
-
     const DIMS: usize = 2;
-
     let number_of_points = 10000;
+    let points_range = (0.0, 1.0);
 
-    println!("Generating points");
-    let point_list: Vec<Point<PointNumberType, DIMS>>
-        = random_point_generator::RandomPointGenerator::<PointNumberType, DIMS>::
-            new_square_range(0.0, 2.0).take(number_of_points).collect();
-
-    println!("Building tree");
-    let mut kdtree = KdTree::new(DIMS);
-    for (i, p) in point_list.iter().enumerate() {
-        kdtree.add(p.dims, i).unwrap();
-    }
-
-    println!("Building mst");
-    let mut euclidean_distance_graph: EuclideanPointDistanceGraph<PointNumberType, DIMS>
-        = EuclideanPointDistanceGraph::new(point_list, kdtree);
-    let mst: minimum_spanning_tree::MinimumSpanningTree<usize>
-        = minimum_spanning_tree::MinimumSpanningTree::construct::<PointNumberType>(
-            &mut euclidean_distance_graph,
-            minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
-
-    println!("Computing tree depths");
-    set_graph_depths_from_mst(&mut euclidean_distance_graph, &mst, 0, 0);
+    let (mst, euclidean_distance_graph) = create_mst_from_random_points::<PointNumberType, DIMS>(
+        number_of_points, points_range);
 
     println!("Drawing mst to image");
-
-    let mut mst_vertex_iter = MstPointVertexIterator::new(&mst, &euclidean_distance_graph);
-    let mut mst_edge_iter = MstPointEdgeIterator::new(&mst, &euclidean_distance_graph);
-
+    let mut mst_vertex_iter = mst_graph_drawer::drawable_vertex_iter(
+        &mst, &euclidean_distance_graph.point_list);
+    let mut mst_edge_iter = mst_graph_drawer::drawable_edge_iter(
+        &mst, &euclidean_distance_graph.point_list);
+    let max_depth = mst.traverse_nodes_preorder().map(|(_, l)| l).max().unwrap_or(0);
 
     let drawing_properties = graph_drawer::DrawingProperties {
         image_width: 512,
         image_height: 512,
-        x_min: 0.0,
-        x_max: 2.0,
-        y_min: 0.0,
-        y_max: 2.0,
-        max_depth: euclidean_distance_graph.depths.iter().map(|v| v.unwrap_or(0)).max().unwrap()
+        x_min: points_range.0,
+        x_max: points_range.1,
+        y_min: points_range.0,
+        y_max: points_range.1,
+        max_depth
     };
     let image = graph_drawer::draw_2d_graph(
         &mut mst_vertex_iter, &mut mst_edge_iter, &drawing_properties);
 
     println!("Saving image");
     image.save("mst.png").unwrap();
-}
-
-fn benchmark_mst_construction() {
-    type PointNumberType = f64;
-
-    const DIMS: usize = 3;
-
-    let number_of_points = 100000;
-
-    let pre_build_time_instant = Instant::now();
-
-    println!("Generating points");
-    let point_list: Vec<Point<PointNumberType, DIMS>>
-        = random_point_generator::RandomPointGenerator::<PointNumberType, DIMS>::
-            new_square_range(0.0, 2.0).take(number_of_points).collect();
-
-    println!("Building tree");
-    let mut kdtree = KdTree::new(DIMS);
-    for (i, p) in point_list.iter().enumerate() {
-        kdtree.add(p.dims, i).unwrap();
-    }
-
-    let build_duration = pre_build_time_instant.elapsed();
-    let pre_mst_build_time_instant = Instant::now();
-
-    println!("Building mst");
-
-    let mut euclidean_distance_graph: EuclideanPointDistanceGraph<PointNumberType, DIMS>
-        = EuclideanPointDistanceGraph::new(point_list, kdtree);
-    let mst: minimum_spanning_tree::MinimumSpanningTree<usize>
-        = minimum_spanning_tree::MinimumSpanningTree::construct::<PointNumberType>(
-            &mut euclidean_distance_graph,
-            minimum_spanning_tree::TreeSizeLimit::Finite(number_of_points));
-    //println!("{:?}", mst);
-
-    let mst_build_duration = pre_mst_build_time_instant.elapsed();
-    println!("Done. Building kd-tree with {} points took {} seconds and {} millis, building mst took {} seconds and {} millis",
-        number_of_points, build_duration.as_secs(), build_duration.subsec_millis(),
-        mst_build_duration.as_secs(), mst_build_duration.subsec_millis());
-}
-
-fn benchmark_kd_tree() {
-    type PointNumberType = f64;
-
-    const DIMS: usize = 3;
-
-    let number_of_points = 20000000;
-    let number_of_searches = 500000;
-
-    let pre_build_time_instant = Instant::now();
-
-    println!("Building tree");
-    let mut kdtree = KdTree::new(DIMS);
-    for (i, p) in random_point_generator::RandomPointGenerator::<PointNumberType, DIMS>::
-            new_square_range(0.0, 2.0).take(number_of_points).enumerate() {
-        kdtree.add(p.dims, i).unwrap();
-    }
-
-    let build_duration = pre_build_time_instant.elapsed();
-    let pre_search_instant = Instant::now();
-
-    println!("Searching tree");
-    let nearest_points: Vec<(PointNumberType, &usize)>
-        = random_point_generator::RandomPointGenerator::<PointNumberType, DIMS>::
-            new_square_range(0.0, 2.0)
-            .take(number_of_searches)
-            .map(|p| kdtree.nearest(&p.dims, 1, &squared_euclidean).unwrap()[0])
-            .collect();
-
-    let search_duration = pre_search_instant.elapsed();
-
-    for (o, _) in nearest_points.iter().take(1000) {
-        println!("Nearest: {:?}", o);
-    }
-
-    println!("Done. Building {} points took {} seconds and {} millis, searching {} points took {} seconds and {} millis, which is {} millis per search",
-        number_of_points, build_duration.as_secs(), build_duration.subsec_millis(),
-        number_of_searches, search_duration.as_secs(), search_duration.subsec_millis(),
-        search_duration.as_millis() as f64 / number_of_searches as f64);
 }

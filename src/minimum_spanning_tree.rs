@@ -221,4 +221,113 @@ impl<V> MinimumSpanningTree<V> where V: PartialEq + Copy + std::cmp::Eq + std::h
     fn get_vertex_from_index_mut(&mut self, index: usize) -> &mut Vertex<V> {
          &mut self.elements[index]
     }
+
+    pub fn traverse_nodes_preorder(&self) -> TreeTraversalNodeIteratorPreorder<V> {
+        TreeTraversalNodeIteratorPreorder::new(&self.elements)
+    }
+
+    pub fn traverse_edges_preorder(&self) -> TreeTraversalEdgeIteratorPreorder<V> {
+        TreeTraversalEdgeIteratorPreorder::new(&self.elements)
+    }
+}
+
+pub struct TreeTraversalNodeIteratorPreorder<'a, V> {
+    mst_elements: &'a Vec<Vertex<V>>,
+    backtrack_indices: Vec<(usize, usize)>
+}
+
+impl<'a, V> TreeTraversalNodeIteratorPreorder<'a, V> {
+    fn new(mst_elements: &'a Vec<Vertex<V>>) -> TreeTraversalNodeIteratorPreorder<'a, V> {
+        TreeTraversalNodeIteratorPreorder {
+            mst_elements,
+            backtrack_indices: vec![(0, 0)]
+        }
+    }
+}
+
+impl<'a, V> Iterator for TreeTraversalNodeIteratorPreorder<'a, V> {
+    type Item = (&'a Vertex<V>, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.backtrack_indices.pop() {
+            Some((current_index, current_level)) => {
+                let current_node = &self.mst_elements[current_index];
+
+                // Preorder traversal is ensured by adding sibling before child. This is because
+                // the backtrack_indices is used as a stack.
+                match current_node.next_sibling_index {
+                    Some(sibling_node_index) => {
+                        self.backtrack_indices.push((sibling_node_index, current_level))
+                    },
+                    None => {}
+                };
+
+                match current_node.first_child_index {
+                    Some(child_node_index) => {
+                        self.backtrack_indices.push((child_node_index, current_level + 1))
+                    },
+                    None => {}
+                };
+
+                Some((current_node, current_level))
+            },
+            None => None
+        }
+    }
+}
+
+pub struct TreeTraversalEdgeIteratorPreorder<'a, V> {
+    mst_elements: &'a Vec<Vertex<V>>,
+    backtrack_indices: Vec<(usize, usize, usize)>
+}
+
+impl<'a, V> TreeTraversalEdgeIteratorPreorder<'a, V> {
+    fn new(mst_elements: &'a Vec<Vertex<V>>) -> TreeTraversalEdgeIteratorPreorder<'a, V> {
+        TreeTraversalEdgeIteratorPreorder {
+            mst_elements,
+            backtrack_indices: vec![(0, 0, 0)]
+        }
+    }
+
+    fn push_next_nodes_to_visit(&mut self) {
+        match self.backtrack_indices.pop() {
+            Some((parent_index, current_index, current_level)) => {
+                let current_node = &self.mst_elements[current_index];
+
+                // Preorder traversal is ensured by adding sibling before child. This is because
+                // the backtrack_indices is used as a stack.
+                match current_node.next_sibling_index {
+                    Some(sibling_node_index) => {
+                        self.backtrack_indices.push((parent_index, sibling_node_index, current_level))
+                    },
+                    None => {}
+                };
+
+                match current_node.first_child_index {
+                    Some(child_node_index) => {
+                        self.backtrack_indices.push((current_index, child_node_index, current_level + 1))
+                    },
+                    None => {}
+                };
+            },
+            None => {}
+        }
+    }
+}
+
+impl<'a, V> Iterator for TreeTraversalEdgeIteratorPreorder<'a, V> {
+    type Item = (&'a Vertex<V>, &'a Vertex<V>, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.push_next_nodes_to_visit();
+        match self.backtrack_indices.last() {
+            Some((parent_index, current_index, current_level)) => {
+                let parent_vertex = &self.mst_elements[*parent_index];
+                let child_vertex = &self.mst_elements[*current_index];
+
+                Some((parent_vertex, child_vertex, current_level - 1))
+            },
+            None => None
+        }
+    }
 }
